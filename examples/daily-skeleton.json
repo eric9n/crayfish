@@ -1,8 +1,8 @@
 {
-  "name": "xbot-daily-skeleton",
+  "name": "daily-skeleton",
   "version": 1,
   "vars": {
-    "TMP": "/tmp/xbot-daily"
+    "TMP": "/tmp/crayfish-daily"
   },
   "steps": [
     {
@@ -18,6 +18,8 @@
     {
       "id": "select_top",
       "kind": "agent",
+      "assigneeAgentId": "primary",
+      "session": { "mode": "sticky", "label": "wf:daily:primary" },
       "prompt": "Select Top5 for deep verify/analyze; items 6-10 for light labeling. Output STRICT JSON only.",
       "input": {
         "candidatesPath": "{{vars.TMP}}/candidates.json"
@@ -42,6 +44,8 @@
         {
           "id": "verify_one",
           "kind": "agent",
+          "assigneeAgentId": "primary",
+          "session": { "mode": "sticky", "label": "wf:daily:primary" },
           "prompt": "Deep verify this item. Output STRICT JSON only.",
           "input": { "item": "{{locals.item}}" },
           "schema": { "type": "object", "additionalProperties": true },

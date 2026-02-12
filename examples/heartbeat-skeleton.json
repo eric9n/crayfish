@@ -33,8 +33,8 @@
     {
       "id": "verify",
       "kind": "agent",
-      "assigneeAgentId": "musk",
-      "session": { "mode": "sticky", "label": "wf:heartbeat:musk" },
+      "assigneeAgentId": "primary",
+      "session": { "mode": "sticky", "label": "wf:heartbeat:primary" },
       "prompt": "Deep verification for Top items. Output STRICT JSON only (no markdown).",
       "input": {
         "clustersPath": "{{vars.TMP}}/clusters.json",
@@ -48,8 +48,8 @@
     {
       "id": "analyze",
       "kind": "agent",
-      "assigneeAgentId": "musk",
-      "session": { "mode": "sticky", "label": "wf:heartbeat:musk" },
+      "assigneeAgentId": "primary",
+      "session": { "mode": "sticky", "label": "wf:heartbeat:primary" },
       "prompt": "Analysis: facts → mechanism → probabilities → impacts → risks → watchpoints. Output STRICT JSON only (no markdown).",
       "input": {
         "clustersPath": "{{vars.TMP}}/clusters.json",
