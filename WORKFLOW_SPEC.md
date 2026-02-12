@@ -183,6 +183,15 @@ Schema:
 }
 ```
 
+#### Session lifecycle (preventing zombie sessions)
+
+Crayfish does **not** create or manage sessions. The caller is responsible for session lifecycle. Recommended practices:
+
+- **Same agent = same label**: Multiple agent steps targeting the same `assigneeAgentId` should share the same `session.label` to reuse one session.
+- **First step uses `reset: true`**: Ensures a clean session state at workflow start.
+- **Label convention**: `wf:<workflowName>:<assigneeAgentId>` for globally unique, predictable labels.
+- **Prefer `sticky`**: Fewer sessions, context reuse across steps. Use `ephemeral` only for one-off queries where context leak is a concern.
+
 ### 4.3) `if`
 
 Branch based on a condition.

@@ -77,6 +77,48 @@ Then the caller must:
 }
 ```
 
+## Session best practices (prevent zombie sessions)
+
+Crayfish does **not** create or manage sessions — it only echoes `session` metadata in `needs_agent.requests[]`. The caller/OpenClaw manages session lifecycle. Follow these rules to avoid zombie sessions:
+
+### Rule 1: Same agent = same sticky label
+
+When a workflow has multiple `agent` steps targeting the same `assigneeAgentId`, use the **same `label`** to reuse one session:
+
+```json
+{
+  "id": "verify",
+  "kind": "agent",
+  "assigneeAgentId": "analyst",
+  "session": { "mode": "sticky", "label": "wf:heartbeat:analyst", "reset": true },
+  ...
+},
+{
+  "id": "analyze",
+  "kind": "agent",
+  "assigneeAgentId": "analyst",
+  "session": { "mode": "sticky", "label": "wf:heartbeat:analyst" },
+  ...
+}
+```
+
+- First step: `"reset": true` → clean state.
+- Subsequent steps: same label, no reset → reuse context.
+
+### Rule 2: Label naming convention
+
+Use `wf:<workflowName>:<assigneeAgentId>` for predictable, globally unique labels.
+
+### Rule 3: Prefer sticky over ephemeral
+
+- `sticky` + shared label → **1 session per agent per workflow** (recommended).
+- `ephemeral` → new session per request, caller must destroy after use.
+- No `session` field → caller decides (risky, may create unbounded sessions).
+
+### Rule 4: Limit distinct assigneeAgentIds
+
+Each distinct `assigneeAgentId` in a workflow may create a separate session. Keep the number small (1–3 agents per workflow).
+
 ## Where to place workflows
 
 Recommended locations:
@@ -90,4 +132,6 @@ Keep workflows in the workspace repo so they can be versioned.
 - `jq -e . <workflow>.json` passes
 - `exec` steps are deterministic and write artifacts under a temp dir
 - `agent` steps have correct schema refs and retries <= 5
+- `agent` steps sharing an `assigneeAgentId` use the same `session.label`
 - A dry-run via `tools/invoke` succeeds for an `exec-only` workflow
+
