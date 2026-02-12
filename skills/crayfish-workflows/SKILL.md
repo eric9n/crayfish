@@ -47,11 +47,11 @@ If it returns:
 
 - `status: "needs_agent"`
 - `requests[0] = { stepId, prompt, input, schema, attempt, maxAttempts, retryContext?, assigneeAgentId?, session? }`
-  - `assigneeAgentId` / `session` are optional routing hints for the caller/orchestrator (Crayfish only echoes them).
+  - `assigneeAgentId` / `session` are optional metadata for the caller (Crayfish only echoes them).
 
-Then the caller/orchestrator must:
+Then the caller must:
 
-1) Route the request to the desired agent session (e.g. by `assigneeAgentId`, and optionally using `session.mode/label/reset`).
+1) Select an agent session to produce the JSON (optionally using `assigneeAgentId` and `session.mode/label/reset`).
 
 2) Run the model with a structured envelope:
 

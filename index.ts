@@ -66,11 +66,11 @@ type Step =
   | {
       id: string;
       kind: "agent";
-      // Optional: route this agent step to a specific agent session in the *caller/orchestrator*.
-      // Crayfish itself never spawns agent turns; it only echoes these fields in needs_agent requests.
+      // Optional metadata for the caller to decide which agent session should produce the JSON for this step.
+      // Note: Crayfish does not start agent sessions; it only includes these fields in `needs_agent.requests[]`.
       assigneeAgentId?: string;
-      // Optional session policy hint for the caller/orchestrator.
-      // Suggested label convention: `wf:<workflowId>:<assigneeAgentId>`.
+      // Optional session policy (used by the caller).
+      // Recommended label convention: `wf:<workflowId>:<assigneeAgentId>`.
       session?: {
         mode?: "ephemeral" | "sticky";
         label?: string;

@@ -28,7 +28,7 @@ Workflow declares:
 Runtime behavior:
 1) If caller does **not** provide `agentOutputs[stepId]`:
    - Crayfish returns `status: "needs_agent"` with a `requests[]` array.
-   - Each request MAY include `assigneeAgentId` and `session` (if declared on the `agent` step) as routing hints for the caller/orchestrator.
+   - Each request MAY include `assigneeAgentId` and `session` (if declared on the `agent` step) as optional metadata for the caller.
 2) Caller (the agent) generates JSON and calls `crayfish.run` again with:
    - `agentOutputs: { [stepId]: <json> }`
    - `attempts: { [stepId]: <attemptNumber> }` (start at 1)
@@ -160,12 +160,12 @@ Example:
 
 Requests a schema-validated JSON output from the agent.
 
-Optional routing hints:
-- `assigneeAgentId` (string, optional): echoed back in `needs_agent.requests[]` so the **caller/orchestrator** can route this step to a specific agent session. If omitted, the caller should default to the current agent.
-- `session` (object, optional): session policy hint echoed back in `needs_agent.requests[]`.
+Optional step metadata:
+- `assigneeAgentId` (string, optional): echoed back in `needs_agent.requests[]` so the **caller** can select which agent session should handle this step. If omitted, the caller may default to its current agent.
+- `session` (object, optional): session policy echoed back in `needs_agent.requests[]`.
   - `mode`: "ephemeral" | "sticky" (default: caller decides)
   - `label`: recommended sticky label (convention: `wf:<workflowId>:<assigneeAgentId>`)
-  - `reset`: boolean; if true, caller should reset/recreate the sticky session before running
+  - `reset`: boolean; if true, the caller should reset/recreate the sticky session before running
 
 Schema:
 ```json
