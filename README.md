@@ -47,18 +47,18 @@ See:
 - `WORKFLOW_SPEC.md`
 - `examples/`
 
-## Agent routing hints (B-scheme)
+## Agent step routing (optional)
 
-`kind: "agent"` steps support optional routing hints that are **echoed back** in `needs_agent.requests[]`:
+For `kind: "agent"` steps, Crayfish may include optional **routing metadata** in `needs_agent.requests[]`. This helps the *caller/orchestrator* decide **which agent session** should produce the JSON.
 
-- `assigneeAgentId?: string`
-- `session?: { mode?: "ephemeral"|"sticky"; label?: string; reset?: boolean }`
+Supported optional fields (Crayfish only echoes them; it does not spawn sessions):
 
-Recommended sticky label convention:
+- `assigneeAgentId?: string` — which agent should handle this step
+- `session?: { mode?: "ephemeral"|"sticky"; label?: string; reset?: boolean }` — session reuse policy hint
+
+If you use sticky sessions, a good label convention is:
 
 - `wf:<workflowId>:<assigneeAgentId>`
-
-Crayfish does not enforce or implement session spawning; your orchestrator does.
 
 ## Skill
 
