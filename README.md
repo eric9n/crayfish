@@ -110,11 +110,37 @@ Suggested sticky label convention:
 
 - `wf:<workflowId>:<assigneeAgentId>`
 
-## Skill
+## Skill (optional)
 
 This repo includes a helper authoring skill:
 
 - `skills/crayfish-workflows/SKILL.md`
+
+### Enable the skill
+
+Skills are enabled separately from plugins. Add to `openclaw.json`:
+
+```json5
+{
+  "skills": {
+    "entries": {
+      "crayfish-workflows": { "enabled": true }
+    }
+  }
+}
+```
+
+If you use an agent-level skill filter (`agents.list[].skills`), also add it there:
+
+```json5
+{
+  "agents": {
+    "list": [
+      { "id": "primary", "skills": ["crayfish-workflows"] }
+    ]
+  }
+}
+```
 
 ## License
 
