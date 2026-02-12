@@ -36,13 +36,13 @@ openclaw plugins enable crayfish
 openclaw gateway restart
 ```
 
-## Enable + configure in `openclaw.json`
+## Minimal working config
 
-After installing, enable the plugin in your OpenClaw config.
+You need **both**: (1) enable the plugin, and (2) allow the `crayfish` tool.
 
-1) Open your `openclaw.json` (or use the Control UI).
+### 1) Enable plugin
 
-2) Add / ensure:
+Open your `openclaw.json` (or use the Control UI) and add:
 
 ```json5
 {
@@ -73,9 +73,9 @@ This plugin currently has **no global config** (its `configSchema` is an empty o
 }
 ```
 
-## Allow the `crayfish` tool (global or per-agent)
+### 2) Allow the `crayfish` tool
 
-Separately from plugin loading, tool usage is controlled by tool policy.
+Tool usage is controlled by tool policy. Choose one:
 
 Global allowlist example:
 
