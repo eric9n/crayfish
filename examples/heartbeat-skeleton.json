@@ -1,8 +1,8 @@
 {
-  "name": "xbot-heartbeat-skeleton",
+  "name": "heartbeat-skeleton",
   "version": 1,
   "vars": {
-    "TMP": "/tmp/xbot-heartbeat"
+    "TMP": "/tmp/crayfish-heartbeat"
   },
   "steps": [
     {
@@ -13,28 +13,28 @@
     {
       "id": "fetch",
       "kind": "exec",
-      "shell": "# TODO: run bird search/read; write raw tweets JSON\n# Example: /usr/bin/bird search --json 'Tesla OR SpaceX lang:en' > '{{vars.TMP}}/tweets_raw.json'\necho '{}' > '{{vars.TMP}}/tweets_raw.json'\necho '{{vars.TMP}}/tweets_raw.json'"
+      "shell": "# TODO: fetch raw items from your source and write JSON to TMP\necho '{\"items\":[]}' > '{{vars.TMP}}/items_raw.json'\necho '{{vars.TMP}}/items_raw.json'"
     },
     {
       "id": "normalize",
       "kind": "exec",
-      "shell": "# TODO: node pipeline/stages/01_normalize.js ...\necho '{\"tweets\":[]}' > '{{vars.TMP}}/tweets_norm.json'\necho '{{vars.TMP}}/tweets_norm.json'"
+      "shell": "# TODO: normalize raw items into a stable structure\necho '{\"items\":[]}' > '{{vars.TMP}}/items_norm.json'\necho '{{vars.TMP}}/items_norm.json'"
     },
     {
       "id": "cluster",
       "kind": "exec",
-      "shell": "# TODO: node pipeline/stages/03_cluster.js ...\necho '{\"clusters\":[]}' > '{{vars.TMP}}/clusters.json'\necho '{{vars.TMP}}/clusters.json'"
+      "shell": "# TODO: group/cluster normalized items if needed\necho '{\"clusters\":[]}' > '{{vars.TMP}}/clusters.json'\necho '{{vars.TMP}}/clusters.json'"
     },
     {
       "id": "gate",
       "kind": "exec",
-      "shell": "# TODO: node pipeline/stages/07_gate.js ...\necho '{\"approved\":false,\"reasons\":[]}' > '{{vars.TMP}}/gate.json'\necho '{{vars.TMP}}/gate.json'"
+      "shell": "# TODO: decide which clusters/items need an agent step\necho '{\"approved\":false,\"reasons\":[]}' > '{{vars.TMP}}/gate.json'\necho '{{vars.TMP}}/gate.json'"
     },
     {
       "id": "verify",
       "kind": "agent",
       "assigneeAgentId": "musk",
-      "session": { "mode": "sticky", "label": "wf:xbot-heartbeat:musk" },
+      "session": { "mode": "sticky", "label": "wf:heartbeat:musk" },
       "prompt": "Deep verification for Top items. Output STRICT JSON only (no markdown).",
       "input": {
         "clustersPath": "{{vars.TMP}}/clusters.json",
@@ -49,7 +49,7 @@
       "id": "analyze",
       "kind": "agent",
       "assigneeAgentId": "musk",
-      "session": { "mode": "sticky", "label": "wf:xbot-heartbeat:musk" },
+      "session": { "mode": "sticky", "label": "wf:heartbeat:musk" },
       "prompt": "Analysis: facts → mechanism → probabilities → impacts → risks → watchpoints. Output STRICT JSON only (no markdown).",
       "input": {
         "clustersPath": "{{vars.TMP}}/clusters.json",
