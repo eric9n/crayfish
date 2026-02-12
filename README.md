@@ -10,8 +10,7 @@ It executes a small **JSON workflow language** with step kinds:
 
 Key design properties:
 
-- Crayfish **never calls LLMs**.
-- `agent` steps return `status: "needs_agent"` with a `requests[]` array; the caller/orchestrator must route the request to an agent session and then call `crayfish.run` again with `agentOutputs`.
+- `agent` steps return `status: "needs_agent"` with a `requests[]` array; the caller must produce a JSON output and then call `crayfish.run` again with `agentOutputs`.
 - Retries/iters are hard-capped at **<= 5**.
 
 ## Install (from GitHub)
@@ -42,7 +41,7 @@ You need **both**: (1) enable the plugin, and (2) allow the `crayfish` tool.
 
 ### 1) Enable plugin
 
-Open your `openclaw.json` (or use the Control UI) and add:
+Add this to your `openclaw.json` (or use the Control UI):
 
 ```json5
 {
@@ -55,29 +54,14 @@ Open your `openclaw.json` (or use the Control UI) and add:
 ```
 
 Notes:
-- `plugins.enabled` exists, but it defaults to enabled in most setups. You only need to set it if you previously disabled plugins globally.
 - `plugins.allow` / `plugins.deny` are optional plugin load allow/deny lists. If you use them, ensure `crayfish` is allowed and not denied.
 - Config changes require a **Gateway restart**.
 
-## Plugin config
-
-This plugin currently has **no global config** (its `configSchema` is an empty object). If you want a placeholder for future options, you may still include:
-
-```json5
-{
-  "plugins": {
-    "entries": {
-      "crayfish": { "enabled": true, "config": {} }
-    }
-  }
-}
-```
-
 ### 2) Allow the `crayfish` tool
 
-Tool usage is controlled by tool policy. Choose one:
+Choose one:
 
-Global allowlist example:
+Global allowlist:
 
 ```json5
 {
@@ -87,7 +71,7 @@ Global allowlist example:
 }
 ```
 
-Per-agent allowlist example:
+Per-agent allowlist:
 
 ```json5
 {
@@ -115,16 +99,14 @@ See:
 - `WORKFLOW_SPEC.md`
 - `examples/`
 
-## Agent step routing (optional)
+## Agent step metadata (optional)
 
-For `kind: "agent"` steps, Crayfish may include optional **routing metadata** in `needs_agent.requests[]`. This helps the *caller/orchestrator* decide **which agent session** should produce the JSON.
+`kind: "agent"` steps may include optional metadata that is echoed back in `needs_agent.requests[]`:
 
-Supported optional fields (Crayfish only echoes them; it does not spawn sessions):
+- `assigneeAgentId?: string`
+- `session?: { mode?: "ephemeral"|"sticky"; label?: string; reset?: boolean }`
 
-- `assigneeAgentId?: string` — which agent should handle this step
-- `session?: { mode?: "ephemeral"|"sticky"; label?: string; reset?: boolean }` — session reuse policy hint
-
-If you use sticky sessions, a good label convention is:
+Suggested sticky label convention:
 
 - `wf:<workflowId>:<assigneeAgentId>`
 
