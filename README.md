@@ -47,20 +47,31 @@ After installing, enable the plugin in your OpenClaw config.
 ```json5
 {
   "plugins": {
-    "enabled": true,
     "entries": {
-      "crayfish": {
-        "enabled": true,
-        "config": {}
-      }
+      "crayfish": { "enabled": true }
     }
   }
 }
 ```
 
 Notes:
+- `plugins.enabled` exists, but it defaults to enabled in most setups. You only need to set it if you previously disabled plugins globally.
 - `plugins.allow` / `plugins.deny` are optional plugin load allow/deny lists. If you use them, ensure `crayfish` is allowed and not denied.
 - Config changes require a **Gateway restart**.
+
+## Plugin config
+
+This plugin currently has **no global config** (its `configSchema` is an empty object). If you want a placeholder for future options, you may still include:
+
+```json5
+{
+  "plugins": {
+    "entries": {
+      "crayfish": { "enabled": true, "config": {} }
+    }
+  }
+}
+```
 
 ## Allow the `crayfish` tool (global or per-agent)
 
