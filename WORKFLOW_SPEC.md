@@ -1,4 +1,4 @@
-# Crayfish Workflow Spec (v0.1)
+# Crayfish Workflow Spec (v0.2)
 
 Purpose: define a **JSON workflow language** executed by the OpenClaw in-process tool `crayfish`.
 
@@ -13,7 +13,6 @@ Instead, LLM judgment happens in the **agent context** via `kind: "agent"` steps
 - **Retries are hard-capped at 5**
   - `exec.retries` in `[1..5]`
   - `agent.retries` in `[1..5]`
-  - `while.maxIters` in `[1..5]`
 
 ## 1) How an `agent` step works (core contract)
 
@@ -54,7 +53,7 @@ This achieves **schema-validated convergence loops** without the tool ever calli
     "tmp": "/tmp/xbot"
   },
   "steps": [
-    { "id": "fetch", "kind": "exec", "shell": "echo hi" }
+    { "id": "fetch", "kind": "exec", "run": { "kind": "cmd", "cmd": "echo", "args": ["hi"] } }
   ]
 }
 ```
@@ -65,12 +64,11 @@ This achieves **schema-validated convergence loops** without the tool ever calli
 - `vars` (object, optional): static variables available to template interpolation
 - `steps` (array, required): list of steps
 
-## 3) Context model: vars/results/locals
+## 3) Context model: vars/results
 
-During execution, expressions may reference three namespaces:
+During execution, expressions may reference two namespaces:
 - `vars`: workflow variables (merged from workflow.vars and invocation vars)
 - `results`: outputs from prior steps by id
-- `locals`: loop locals (from forEach)
 
 These namespaces are accessible in conditions via JSON paths (see below).
 
@@ -100,7 +98,7 @@ Schema:
 {
   "id": "fetch",
   "kind": "exec",
-  "shell": "echo hello",
+  "run": { "kind": "cmd", "cmd": "bash", "args": ["-lc", "echo hello"] },
   "timeoutMs": 180000,
   "retries": 2,
   "io": {
@@ -149,14 +147,15 @@ Returns (in `results[id]`):
 Template interpolation:
 - inside file contract `path` strings
 - inside `exec.run.cmd` and every string in `exec.run.args`
+- inside `agent.prompt` (string interpolation)
+- inside `agent.input` (deep interpolation: single `{{expr}}` values preserve raw type)
 
 Supported expressions:
 - `{{vars.X}}`
-- `{{locals.Y}}`
 
 Example:
 ```json
-{ "id":"mk", "kind":"exec", "shell":"mkdir -p '{{vars.tmp}}'" }
+{ "id":"mk", "kind":"exec", "run":{ "kind":"cmd", "cmd":"bash", "args":["-lc","mkdir -p '{{vars.tmp}}'"] } }
 ```
 
 ### 4.2) `agent`
@@ -199,46 +198,12 @@ Schema:
 }
 ```
 
-### 4.4) `forEach`
-
-Loop over an array found at `listPath`.
-
-Schema:
-```json
-{
-  "id": "loop",
-  "kind": "forEach",
-  "listPath": "$.results.cluster.json.clusters",
-  "itemVar": "cluster",
-  "body": [ ...steps... ]
-}
-```
-
-- Each iteration sets `locals[ itemVar ] = currentItem`.
-
-### 4.5) `while`
-
-Runs `body` until `until` becomes true, or `maxIters` reached.
-
-Schema:
-```json
-{
-  "id": "converge",
-  "kind": "while",
-  "maxIters": 3,
-  "until": { "op": "exists", "path": "$.results.verify" },
-  "body": [ ...steps... ]
-}
-```
-
-Note: `maxIters` is hard-capped to 5.
-
 ## 5) Condition language
 
-Condition object (`cond` / `until`) supports:
+Condition object (`cond`) supports:
 - `exists`: `{ op:"exists", path:"$.results.a" }`
 - `eq`: `{ op:"eq", path:"$.vars.mode", value:"daily" }`
-- `ne`: `{ op:"ne", path:"$.locals.cluster.id", value:"x" }`
+- `ne`: `{ op:"ne", path:"$.vars.status", value:"x" }`
 - `gt`: `{ op:"gt", path:"$.results.score", value": 0.7 }`
 - `lt`: `{ op:"lt", path:"$.results.score", value": 0.2 }`
 
@@ -251,7 +216,6 @@ Supported tokens:
 Namespaces are available under the root:
 - `$.vars.*`
 - `$.results.*`
-- `$.locals.*`
 
 ## 6) Invocation shape (tool call)
 
@@ -260,16 +224,24 @@ Crayfish tool call args:
 ```json
 {
   "action": "run",
+  "runId": "abc123",
+  "agentId": "primary",
   "workflow": { ... },
   "vars": { ... },
-  "agentOutputs": { "verify": { ... } },
-  "attempts": { "verify": 1 }
+  "agentOutputs": { "abc123:verify:1": { ... } },
+  "attempts": { "verify": 1 },
+  "results": { ... },
+  "ref": { "schemaPaths": ["pipeline/schema"] }
 }
 ```
 
+- `runId`: stable run identifier (auto-generated if omitted).
+- `agentId`: required; maps to workspace root via `api.config.agents.list[]`.
 - `vars` overrides/extends workflow.vars.
-- `agentOutputs` provides agent-step outputs by step id.
-- `attempts` carries attempt counters for agent steps.
+- `agentOutputs` provides agent-step outputs keyed by **requestId** (`<runId>:<stepId>:<attempt>`).
+- `attempts` carries attempt counters for agent steps (keyed by stepId).
+- `results` carries prior step results for resume.
+- `ref.schemaPaths` provides `$ref` resolver search roots (workspace-relative).
 
 ## 7) Minimal example (exec → agent → exec)
 
@@ -279,7 +251,7 @@ Workflow:
   "name": "agent-test",
   "version": 1,
   "steps": [
-    {"id":"a","kind":"exec","shell":"echo pre"},
+    {"id":"a","kind":"exec","run":{"kind":"cmd","cmd":"echo","args":["pre"]}},
     {
       "id":"v",
       "kind":"agent",
@@ -293,20 +265,23 @@ Workflow:
       },
       "retries": 3
     },
-    {"id":"b","kind":"exec","shell":"echo post"}
+    {"id":"b","kind":"exec","run":{"kind":"cmd","cmd":"echo","args":["post"]}}
   ]
 }
 ```
 
-Run 1 (no agentOutputs): returns `needs_agent`.
+Run 1 (no agentOutputs): returns `needs_agent` with `requestId: "<runId>:v:1"`.
 
 Run 2 (with agentOutputs):
 ```json
 {
   "action":"run",
+  "runId": "<same runId>",
+  "agentId": "primary",
   "workflow": { ... },
-  "agentOutputs": { "v": {"foo":"bar"} },
-  "attempts": { "v": 1 }
+  "agentOutputs": { "<runId>:v:1": {"foo":"bar"} },
+  "attempts": { "v": 1 },
+  "results": { "a": { "kind":"exec", "ok":true, "mode":"none", "stdout":"pre", "stderr":"" } }
 }
 ```
 
@@ -317,7 +292,7 @@ Run 2 (with agentOutputs):
 When an LLM writes a workflow JSON:
 - Output **JSON only**, no markdown.
 - Every step must have unique `id`.
-- Keep `exec.shell` deterministic and safe.
+- Keep `exec.run` commands deterministic and safe.
 - Put all LLM judgment into `agent` steps, with:
   - strict output schema (prefer `$ref`)
   - retries <= 5
@@ -331,17 +306,19 @@ Do **not** embed the schema into the `prompt` string. Instead, the agent should 
 - `outputSchema`
 - `retryContext` (if present)
 
-Recommended model input envelope:
+Recommended model input envelope (built from `needs_agent.requests[0]`):
 
 ```json
 {
   "task": { "stepId": "verify", "attempt": 1, "maxAttempts": 3 },
-  "instructions": "<requests[0].prompt>",
-  "input": { "...": "..." },
-  "outputSchema": { "$ref": "Verify" },
-  "retryContext": { "validationErrors": ["..."] }
+  "instructions": "<request.prompt>",
+  "input": "<request.input>",
+  "outputSchema": "<request.schema (fully resolved, no $ref)>",
+  "retryContext": "<request.retryContext if present>"
 }
 ```
+
+Note: `request.schema` is **fully resolved** — all `$ref` are expanded by Crayfish before returning. The caller receives a self-contained JSON Schema.
 
 Model output requirements (system-level rules suggested):
 - Output **STRICT JSON only** (no markdown, no explanation).
@@ -350,4 +327,4 @@ Model output requirements (system-level rules suggested):
 
 ---
 
-Status: v0.1 (MVP). Next planned additions: richer interpolation, explicit artifact files, stricter static validation of steps.
+Status: v0.2. Step kinds: exec, agent, if. Schema $ref is deep-resolved in needs_agent responses. No payload size limits. Exec timeout defaults to 3 min (user-configurable, no hard cap).

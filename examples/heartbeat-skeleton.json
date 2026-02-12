@@ -8,33 +8,71 @@
     {
       "id": "mk_tmp",
       "kind": "exec",
-      "shell": "mkdir -p '{{vars.TMP}}'"
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "mkdir -p '{{vars.TMP}}'"
+        ]
+      }
     },
     {
       "id": "fetch",
       "kind": "exec",
-      "shell": "# TODO: fetch raw items from your source and write JSON to TMP\necho '{\"items\":[]}' > '{{vars.TMP}}/items_raw.json'\necho '{{vars.TMP}}/items_raw.json'"
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "# TODO: fetch raw items from your source and write JSON to TMP\necho '{\"items\":[]}' > '{{vars.TMP}}/items_raw.json'\necho '{{vars.TMP}}/items_raw.json'"
+        ]
+      }
     },
     {
       "id": "normalize",
       "kind": "exec",
-      "shell": "# TODO: normalize raw items into a stable structure\necho '{\"items\":[]}' > '{{vars.TMP}}/items_norm.json'\necho '{{vars.TMP}}/items_norm.json'"
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "# TODO: normalize raw items into a stable structure\necho '{\"items\":[]}' > '{{vars.TMP}}/items_norm.json'\necho '{{vars.TMP}}/items_norm.json'"
+        ]
+      }
     },
     {
       "id": "cluster",
       "kind": "exec",
-      "shell": "# TODO: group/cluster normalized items if needed\necho '{\"clusters\":[]}' > '{{vars.TMP}}/clusters.json'\necho '{{vars.TMP}}/clusters.json'"
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "# TODO: group/cluster normalized items if needed\necho '{\"clusters\":[]}' > '{{vars.TMP}}/clusters.json'\necho '{{vars.TMP}}/clusters.json'"
+        ]
+      }
     },
     {
       "id": "gate",
       "kind": "exec",
-      "shell": "# TODO: decide which clusters/items need an agent step\necho '{\"approved\":false,\"reasons\":[]}' > '{{vars.TMP}}/gate.json'\necho '{{vars.TMP}}/gate.json'"
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "# TODO: decide which clusters/items need an agent step\necho '{\"approved\":false,\"reasons\":[]}' > '{{vars.TMP}}/gate.json'\necho '{{vars.TMP}}/gate.json'"
+        ]
+      }
     },
     {
       "id": "verify",
       "kind": "agent",
       "assigneeAgentId": "primary",
-      "session": { "mode": "sticky", "label": "wf:heartbeat:primary" },
+      "session": {
+        "mode": "sticky",
+        "label": "wf:heartbeat:primary"
+      },
       "prompt": "Deep verification for Top items. Output STRICT JSON only (no markdown).",
       "input": {
         "clustersPath": "{{vars.TMP}}/clusters.json",
@@ -49,7 +87,10 @@
       "id": "analyze",
       "kind": "agent",
       "assigneeAgentId": "primary",
-      "session": { "mode": "sticky", "label": "wf:heartbeat:primary" },
+      "session": {
+        "mode": "sticky",
+        "label": "wf:heartbeat:primary"
+      },
       "prompt": "Analysis: facts → mechanism → probabilities → impacts → risks → watchpoints. Output STRICT JSON only (no markdown).",
       "input": {
         "clustersPath": "{{vars.TMP}}/clusters.json",
@@ -63,7 +104,14 @@
     {
       "id": "render",
       "kind": "exec",
-      "shell": "# TODO: node pipeline/stages/09_render_analysis.js ...\necho '{\"text\":\"\"}' > '{{vars.TMP}}/render.json'\ncat '{{vars.TMP}}/render.json'"
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "# TODO: node pipeline/stages/09_render_analysis.js ...\necho '{\"text\":\"\"}' > '{{vars.TMP}}/render.json'\ncat '{{vars.TMP}}/render.json'"
+        ]
+      }
     }
   ]
 }

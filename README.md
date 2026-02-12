@@ -6,7 +6,7 @@ It executes a small **JSON workflow language** with step kinds:
 
 - `exec` (deterministic subprocess)
 - `agent` (schema-validated JSON output produced by an agent outside the tool)
-- `if`, `forEach`, `while`
+- `if`
 
 Key design properties:
 

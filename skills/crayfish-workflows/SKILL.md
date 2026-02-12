@@ -1,6 +1,6 @@
 ---
 name: crayfish-workflows
-description: Create, edit, and validate Crayfish JSON workflows for OpenClaw pipelines (Heartbeat/Daily). Use when configuring a schema-validated pipeline with step kinds exec/agent/if/forEach/while, $ref schema resolution, per-call ref.schemaPaths, and needs_agent → agentOutputs convergence.
+description: Create, edit, and validate Crayfish JSON workflows for OpenClaw pipelines (Heartbeat/Daily). Use when configuring a schema-validated pipeline with step kinds exec/agent/if, $ref schema resolution, per-call ref.schemaPaths, and needs_agent → agentOutputs convergence.
 ---
 
 # Crayfish pipeline authoring
@@ -22,7 +22,7 @@ A workflow must be:
 
 - JSON object with `steps: []`
 - Every step has unique `id`
-- Step kinds allowed: `exec | agent | if | forEach | while`
+- Step kinds allowed: `exec | agent | if`
 - Retries/iters hard cap: **<= 5**
 
 ## $ref rules (project policy)
@@ -46,7 +46,9 @@ Crayfish never calls an LLM.
 If it returns:
 
 - `status: "needs_agent"`
-- `requests[0] = { stepId, prompt, input, schema, attempt, maxAttempts, retryContext?, assigneeAgentId?, session? }`
+- `requests[0] = { requestId, stepId, prompt, input, schema, attempt, maxAttempts, retryContext?, assigneeAgentId?, session? }`
+  - `requestId` format: `<runId>:<stepId>:<attempt>` (used as key in `agentOutputs`).
+  - `schema` is **fully resolved** (all `$ref` expanded). The caller receives a self-contained JSON Schema.
   - `assigneeAgentId` / `session` are optional metadata for the caller (Crayfish only echoes them).
 
 Then the caller must:
@@ -58,10 +60,10 @@ Then the caller must:
 ```json
 {
   "task": { "stepId": "...", "attempt": 1, "maxAttempts": 3 },
-  "instructions": "<prompt>",
-  "input": {"...": "..."},
-  "outputSchema": {"$ref": "Verify"},
-  "retryContext": {"validationErrors": ["..."]}
+  "instructions": "<request.prompt>",
+  "input": "<request.input>",
+  "outputSchema": "<request.schema (fully resolved)>",
+  "retryContext": "<request.retryContext if present>"
 }
 ```
 
@@ -69,8 +71,9 @@ Then the caller must:
 
 ```json
 {
-  "agentOutputs": { "<stepId>": {"...": "..."} },
-  "attempts": { "<stepId>": 1 }
+  "agentOutputs": { "<requestId>": {"...": "..."} },
+  "attempts": { "<stepId>": 1 },
+  "results": { "<priorStepId>": { ... } }
 }
 ```
 

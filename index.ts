@@ -10,7 +10,7 @@ import path from "node:path";
 // - No tool-driven LLM calls.
 //
 // Workflows can include "agent" steps. The tool returns `needs_agent` unless the
-// caller supplies `agentOutputs[stepId]`, which is schema-validated.
+// caller supplies `agentOutputs[requestId]`, which is schema-validated.
 //
 // Exec steps are deterministic subprocesses. This version supports:
 // - run.kind="cmd" with {cmd,args[]}
@@ -44,64 +44,50 @@ type StreamInputFrom = {
 
 type Step =
   | {
-      id: string;
-      kind: "exec";
-      run: { kind: "cmd"; cmd: string; args?: string[] };
-      timeoutMs?: number;
-      retries?: number;
-      io?:
-        | { mode?: "none" }
-        | {
-            mode: "file";
-            in?: Record<string, FileContract>;
-            out?: Record<string, FileContract>;
-          }
-        | {
-            mode: "stream";
-            inputFrom?: StreamInputFrom;
-            inputSchema?: Json;
-            outputSchema?: Json;
-          };
+    id: string;
+    kind: "exec";
+    run: { kind: "cmd"; cmd: string; args?: string[] };
+    timeoutMs?: number;
+    retries?: number;
+    io?:
+    | { mode?: "none" }
+    | {
+      mode: "file";
+      in?: Record<string, FileContract>;
+      out?: Record<string, FileContract>;
     }
-  | {
-      id: string;
-      kind: "agent";
-      // Optional metadata for the caller to decide which agent session should produce the JSON for this step.
-      // Note: Crayfish does not start agent sessions; it only includes these fields in `needs_agent.requests[]`.
-      assigneeAgentId?: string;
-      // Optional session policy (used by the caller).
-      // Recommended label convention: `wf:<workflowId>:<assigneeAgentId>`.
-      session?: {
-        mode?: "ephemeral" | "sticky";
-        label?: string;
-        reset?: boolean;
-      };
-      prompt: string;
-      input: Json;
-      schema: Json;
-      retries?: number; // 1..5 (hard cap)
-    }
-  | {
-      id: string;
-      kind: "if";
-      cond: Cond;
-      then: Step[];
-      else?: Step[];
-    }
-  | {
-      id: string;
-      kind: "forEach";
-      listPath: string;
-      itemVar: string;
-      body: Step[];
-    }
-  | {
-      id: string;
-      kind: "while";
-      maxIters: number; // 1..5 (hard cap)
-      until: Cond;
-      body: Step[];
+    | {
+      mode: "stream";
+      inputFrom?: StreamInputFrom;
+      inputSchema?: Json;
+      outputSchema?: Json;
     };
+  }
+  | {
+    id: string;
+    kind: "agent";
+    // Optional metadata for the caller to decide which agent session should produce the JSON for this step.
+    // Note: Crayfish does not start agent sessions; it only includes these fields in `needs_agent.requests[]`.
+    assigneeAgentId?: string;
+    // Optional session policy (used by the caller).
+    // Recommended label convention: `wf:<workflowId>:<assigneeAgentId>`.
+    session?: {
+      mode?: "ephemeral" | "sticky";
+      label?: string;
+      reset?: boolean;
+    };
+    prompt: string;
+    input: Json;
+    schema: Json;
+    retries?: number; // 1..5 (hard cap)
+  }
+  | {
+    id: string;
+    kind: "if";
+    cond: Cond;
+    then: Step[];
+    else?: Step[];
+  };
 
 type Workflow = {
   name?: string;
@@ -119,6 +105,9 @@ type RunCtx = {
   // stepId -> current attempt counter (1-indexed)
   attempts: Record<string, number>;
 };
+
+// --- Exec Constants ---
+const DEFAULT_EXEC_TIMEOUT_MS = 180000; // 3 minutes
 
 function clamp1to5(n: any, fallback: number) {
   const x = Number(n);
@@ -155,24 +144,41 @@ function getSchemaDirsFromParams(params: any): string[] {
   return Array.from(new Set(out)).slice(0, 10);
 }
 
-const REF_CACHE = new Map<string, any>();
-
 function resolveRef(params: any, ref: string) {
   const fname = safeRefToFilename(ref);
   if (!fname) throw new Error(`Invalid $ref: ${ref}`);
   const dirs = getSchemaDirsFromParams(params);
-  const cacheKey = `${fname}@@${JSON.stringify(dirs)}`;
-  if (REF_CACHE.has(cacheKey)) return REF_CACHE.get(cacheKey);
 
   for (const dir of dirs) {
     const p = path.join(dir, fname);
     if (fs.existsSync(p)) {
-      const parsed = JSON.parse(fs.readFileSync(p, "utf8"));
-      REF_CACHE.set(cacheKey, parsed);
-      return parsed;
+      return JSON.parse(fs.readFileSync(p, "utf8"));
     }
   }
   throw new Error(`$ref not found: ${ref} (searched: ${dirs.join(", ") || "<empty ref.schemaPaths>"})`);
+}
+
+/** Deep-resolve all $ref in a schema tree so the returned schema is fully self-contained. */
+function resolveSchemaRefs(params: any, schema: any, seen = new Set<string>()): any {
+  if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map((s) => resolveSchemaRefs(params, s, seen));
+
+  if (schema.$ref) {
+    const ref = String(schema.$ref);
+    if (seen.has(ref)) return schema; // circular – return as-is
+    try {
+      const resolved = resolveRef(params, ref);
+      return resolveSchemaRefs(params, resolved, new Set([...seen, ref]));
+    } catch {
+      return schema; // unresolvable – return as-is
+    }
+  }
+
+  const out: any = {};
+  for (const [k, v] of Object.entries(schema)) {
+    out[k] = v && typeof v === "object" ? resolveSchemaRefs(params, v, seen) : v;
+  }
+  return out;
 }
 
 function validateSchema(params: any, schema: any, value: any, pth = "$", errs: string[] = [], refStack: string[] = []) {
@@ -275,8 +281,8 @@ function getPath(obj: any, p: string): any {
   return cur;
 }
 
-function evalCond(cond: Cond, ctx: RunCtx, locals: Record<string, Json>) {
-  const root = { vars: ctx.vars, results: ctx.results, locals };
+function evalCond(cond: Cond, ctx: RunCtx) {
+  const root = { vars: ctx.vars, results: ctx.results };
   const v = getPath(root, cond.path);
   if (cond.op === "exists") return v !== undefined && v !== null;
   if (cond.op === "eq") return JSON.stringify(v) === JSON.stringify(cond.value);
@@ -286,13 +292,34 @@ function evalCond(cond: Cond, ctx: RunCtx, locals: Record<string, Json>) {
   return false;
 }
 
-function interpolate(str: string, ctx: RunCtx, locals: Record<string, Json>) {
+function interpolate(str: string, ctx: RunCtx) {
   return String(str).replace(/\{\{([^}]+)\}\}/g, (_m, expr) => {
     const e = String(expr).trim();
     if (e.startsWith("vars.")) return String(getPath({ vars: ctx.vars }, `$.${e}`) ?? "");
-    if (e.startsWith("locals.")) return String(getPath({ locals }, `$.${e}`) ?? "");
     return "";
   });
+}
+
+function interpolateDeep(val: Json, ctx: RunCtx): Json {
+  if (typeof val === "string") {
+    // Single expression → return raw value (preserves objects/arrays/numbers)
+    const m = val.match(/^\{\{([^}]+)\}\}$/);
+    if (m) {
+      const e = m[1].trim();
+      if (e.startsWith("vars.")) return getPath({ vars: ctx.vars }, `$.${e}`) ?? null;
+      return null;
+    }
+    return interpolate(val, ctx);
+  }
+  if (Array.isArray(val)) return val.map((v) => interpolateDeep(v, ctx));
+  if (val !== null && typeof val === "object") {
+    const out: Record<string, Json> = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = interpolateDeep(v as Json, ctx);
+    }
+    return out;
+  }
+  return val;
 }
 
 function resolveWorkspacePath(params: any, pRel: string) {
@@ -311,8 +338,8 @@ function readJsonFile(absPath: string) {
   return JSON.parse(txt);
 }
 
-function validateFileContract(params: any, contract: FileContract, ctx: RunCtx, locals: Record<string, Json>, label: string) {
-  const pRel = interpolate(contract.path, ctx, locals);
+function validateFileContract(params: any, contract: FileContract, ctx: RunCtx, label: string) {
+  const pRel = interpolate(contract.path, ctx);
   const pAbs = resolveWorkspacePath(params, pRel);
   const value = readJsonFile(pAbs);
   if (contract.schema) {
@@ -322,16 +349,17 @@ function validateFileContract(params: any, contract: FileContract, ctx: RunCtx, 
   return { pathRel: pRel, pathAbs: pAbs, value };
 }
 
-async function execCmd(params: any, cmd: string, args: string[] = [], timeoutMs = 180000, stdinText?: string) {
+async function execCmd(params: any, cmd: string, args: string[] = [], timeoutMs = DEFAULT_EXEC_TIMEOUT_MS, stdinText?: string) {
   const { spawn } = await import("node:child_process");
   const cwd = getWorkspaceRoot(params);
+
   return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], cwd });
     let stdout = "";
     let stderr = "";
     const t = setTimeout(() => {
       child.kill("SIGKILL");
-      reject(new Error("exec timeout"));
+      reject(new Error(`exec timeout (exceeded ${timeoutMs}ms)`));
     }, timeoutMs);
 
     child.stdout.on("data", (d) => (stdout += d.toString("utf8")));
@@ -353,45 +381,47 @@ async function execCmd(params: any, cmd: string, args: string[] = [], timeoutMs 
   });
 }
 
-async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<string, Json>): Promise<any> {
+async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
   for (const step of steps) {
     if (!step.id) throw new Error("Step missing id");
 
     // Resume support: if we already have a successful result for this stepId, skip re-running it.
-    // (Caller/orchestrator may supply prior ctx.results for breakpoint resume.)
     if (ctx.results?.[step.id]?.ok === true) {
       continue;
     }
 
     if (step.kind === "exec") {
+      if ((step as any).shell !== undefined) {
+        throw new Error(
+          `exec(${step.id}): 'shell' is deprecated. Use run: { kind: "cmd", cmd: "bash", args: ["-lc", "<shell>"] }.`
+        );
+      }
       const retries = clamp1to5(step.retries, 1);
       let lastErr: any = null;
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-          const timeoutMs = step.timeoutMs ?? 180000;
+          const timeoutMs = step.timeoutMs ?? DEFAULT_EXEC_TIMEOUT_MS;
           const mode = (step.io as any)?.mode ?? "none";
 
           if (step.run?.kind !== "cmd" || typeof step.run.cmd !== "string") {
             throw new Error(`exec(${step.id}): run.kind=cmd with cmd string is required`);
           }
 
-          const cmdI = interpolate(step.run.cmd, ctx, locals);
-          const argsI = (step.run.args ?? []).map((a) => interpolate(a, ctx, locals));
+          const cmdI = interpolate(step.run.cmd, ctx);
+          const argsI = (step.run.args ?? []).map((a) => interpolate(a, ctx));
 
           if (mode === "file") {
-            // Validate declared inputs
             const ioIn = (step.io as any).in || {};
             for (const [k, c] of Object.entries(ioIn)) {
-              validateFileContract(params, c as any, ctx, locals, `step:${step.id}:in:${k}`);
+              validateFileContract(params, c as any, ctx, `step:${step.id}:in:${k}`);
             }
 
             const out = await execCmd(params, cmdI, argsI, timeoutMs);
 
-            // Validate declared outputs
             const outputs: any = {};
             const ioOut = (step.io as any).out || {};
             for (const [k, c] of Object.entries(ioOut)) {
-              const info = validateFileContract(params, c as any, ctx, locals, `step:${step.id}:out:${k}`);
+              const info = validateFileContract(params, c as any, ctx, `step:${step.id}:out:${k}`);
               outputs[k] = { path: info.pathRel };
             }
 
@@ -401,7 +431,6 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
           }
 
           if (mode === "stream") {
-            // Determine input JSON
             const inputFrom = (step.io as any).inputFrom as StreamInputFrom | undefined;
             let inJson: any = null;
             if (inputFrom?.stepId) {
@@ -412,7 +441,6 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
               inJson = getPath(prevJson, jp);
             }
 
-            // Validate input schema if provided
             const inSchema = (step.io as any).inputSchema;
             if (inSchema) {
               const errs = validateSchema(params, inSchema, inJson);
@@ -420,9 +448,9 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
             }
 
             const stdinText = JSON.stringify(inJson ?? null);
+
             const out = await execCmd(params, cmdI, argsI, timeoutMs, stdinText);
 
-            // Enforce pure JSON stdout
             let outJson: any;
             try {
               outJson = JSON.parse(out.stdout);
@@ -441,7 +469,6 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
             break;
           }
 
-          // mode none (default): just run cmd, stdout is free-form
           const out = await execCmd(params, cmdI, argsI, timeoutMs);
           ctx.results[step.id] = { kind: "exec", ok: true, mode: "none", stdout: out.stdout.trim(), stderr: out.stderr };
           lastErr = null;
@@ -456,33 +483,10 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
     }
 
     if (step.kind === "if") {
-      const ok = evalCond(step.cond, ctx, locals);
+      const ok = evalCond(step.cond, ctx);
       const branch = ok ? step.then : step.else ?? [];
-      const res = await runSteps(params, branch, ctx, { ...locals });
+      const res = await runSteps(params, branch, ctx);
       if (res?.status === "needs_agent") return res;
-      continue;
-    }
-
-    if (step.kind === "forEach") {
-      const list = getPath({ vars: ctx.vars, results: ctx.results, locals }, step.listPath);
-      const arr = Array.isArray(list) ? list : [];
-      for (let i = 0; i < arr.length; i++) {
-        const nextLocals = { ...locals, [step.itemVar]: arr[i] };
-        const res = await runSteps(params, step.body, ctx, nextLocals);
-        if (res?.status === "needs_agent") return res;
-      }
-      continue;
-    }
-
-    if (step.kind === "while") {
-      const maxIters = clamp1to5(step.maxIters, 1);
-      for (let iter = 1; iter <= maxIters; iter++) {
-        const ok = evalCond(step.until, ctx, locals);
-        if (ok) break;
-        const res = await runSteps(params, step.body, ctx, locals);
-        if (res?.status === "needs_agent") return res;
-        if (iter === maxIters) throw new Error(`while(${step.id}) exceeded maxIters=${maxIters}`);
-      }
       continue;
     }
 
@@ -493,6 +497,12 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
       if (!runId) throw new Error("Missing runId (required for requestId-based resume)");
       const requestId = `${runId}:${step.id}:${attempt}`;
       const out = ctx.agentOutputs?.[requestId];
+
+      // Resolve templates in prompt and input (supports {{vars.*}})
+      const resolvedPrompt = interpolate(step.prompt, ctx);
+      const resolvedInput = interpolateDeep(step.input, ctx);
+      // Deep-resolve $ref so the returned schema is self-contained for the caller/LLM
+      const resolvedSchema = resolveSchemaRefs(params, step.schema);
 
       if (out === undefined) {
         return {
@@ -506,9 +516,9 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
               session: step.session,
               attempt,
               maxAttempts,
-              prompt: step.prompt,
-              input: step.input,
-              schema: step.schema
+              prompt: resolvedPrompt,
+              input: resolvedInput,
+              schema: resolvedSchema
             }
           ],
           results: ctx.results,
@@ -523,21 +533,21 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
         if (nextAttempt > maxAttempts) {
           return { ok: false, error: "agent_output_schema_failed", stepId: step.id, errors: errs.slice(0, 30) };
         }
-        const requestId = `${runId}:${step.id}:${nextAttempt}`;
+        const nextRequestId = `${runId}:${step.id}:${nextAttempt}`;
         return {
           ok: true,
           status: "needs_agent",
           requests: [
             {
-              requestId,
+              requestId: nextRequestId,
               stepId: step.id,
               assigneeAgentId: step.assigneeAgentId,
               session: step.session,
               attempt: nextAttempt,
               maxAttempts,
-              prompt: step.prompt,
-              input: step.input,
-              schema: step.schema,
+              prompt: resolvedPrompt,
+              input: resolvedInput,
+              schema: resolvedSchema,
               retryContext: { validationErrors: errs.slice(0, 30) }
             }
           ],
@@ -556,21 +566,15 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
   return { ok: true, status: "done", results: ctx.results, attempts: ctx.attempts };
 }
 
-// Tool parameters schema (keep permissive; runtime does strict checks).
+// Tool parameters schema
 const PARAMETERS_SCHEMA: any = {
   type: "object",
   additionalProperties: false,
   required: ["action", "workflow", "agentId"],
   properties: {
     action: { type: "string", enum: ["run"] },
-
-    // Optional: provide a stable run id so requestIds remain stable across resume attempts.
     runId: { type: "string" },
-
-    // REQUIRED: pick a configured agent as the workspace+agentDir context.
-    // This does NOT spawn an agent turn; it only selects a deterministic root for path resolution + exec cwd.
     agentId: { type: "string" },
-
     workflow: {
       type: "object",
       additionalProperties: false,
@@ -583,7 +587,6 @@ const PARAMETERS_SCHEMA: any = {
       }
     },
     vars: { type: "object" },
-    // Resume inputs
     results: { type: "object" },
     agentOutputs: { type: "object" },
     attempts: { type: "object" },
@@ -612,48 +615,30 @@ export default function (api: any) {
     {
       name: "crayfish",
       description:
-        "Crayfish: run a JSON workflow (exec(cmd)+io modes, agent, if/forEach/while) with convergence retries (<=5).",
+        "Crayfish: run a JSON workflow (exec(cmd)+io modes, agent, if) with schema-validated convergence retries (<=5).",
       parameters: PARAMETERS_SCHEMA,
       async execute(_id: string, params: any) {
         if (params.action !== "run") {
           return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: "Unknown action" }) }] };
         }
 
-        // IMPORTANT: deterministic workspace root.
-        // Tool calls do not currently receive caller agent context, so we require/encourage explicit agentId.
         if (!params?.agentId) {
           return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ ok: false, error: "Missing required field: agentId" })
-              }
-            ]
+            content: [{ type: "text", text: JSON.stringify({ ok: false, error: "Missing required field: agentId" }) }]
           };
         }
 
         const root = resolveWorkspaceRootFromAgentId(api, params.agentId);
         if (!root) {
           return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ ok: false, error: `Unknown agentId '${params.agentId}' (no workspace found in config)` })
-              }
-            ]
+            content: [{ type: "text", text: JSON.stringify({ ok: false, error: `Unknown agentId '${params.agentId}'` }) }]
           };
         }
 
-        (params as any).__workspaceRoot = root;
-
+        const runId = String(params.runId || crypto.randomBytes(6).toString("hex"));
+        const runtimeParams = { ...params, __workspaceRoot: root, runId };
         const wf: Workflow = params.workflow;
 
-        // Stable run id for requestId-based resume.
-        const runId = String(params.runId || crypto.randomBytes(6).toString("hex"));
-        (params as any).runId = runId;
-
-        // Back-compat: if the caller cannot pass resume fields as top-level tool params
-        // (e.g., due to a restricted function-call schema), allow embedding them in workflow.vars.
         const embeddedAgentOutputs = (wf.vars as any)?.__agentOutputs;
         const embeddedAttempts = (wf.vars as any)?.__attempts;
         const embeddedResults = (wf.vars as any)?.__results;
@@ -670,8 +655,12 @@ export default function (api: any) {
           attempts: params.attempts ?? embeddedAttempts ?? {}
         };
 
-        const out = await runSteps(params, wf.steps as any, ctx, {});
-        return { content: [{ type: "text", text: JSON.stringify({ runId: (params as any).runId, ...out }) }] };
+        try {
+          const out = await runSteps(runtimeParams, wf.steps as any, ctx);
+          return { content: [{ type: "text", text: JSON.stringify({ runId, ...out }) }] };
+        } catch (err: any) {
+          return { content: [{ type: "text", text: JSON.stringify({ ok: false, error: err?.message || String(err) }) }] };
+        }
       }
     },
     { optional: true }
