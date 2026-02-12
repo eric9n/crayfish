@@ -36,6 +36,34 @@ openclaw plugins enable crayfish
 openclaw gateway restart
 ```
 
+## Enable + configure in `openclaw.json`
+
+After installing, enable the plugin in your OpenClaw config.
+
+1) Open your `openclaw.json` (or use the Control UI).
+
+2) Add / ensure:
+
+```json5
+{
+  "plugins": {
+    "enabled": true,
+    "allow": ["crayfish"],
+    "entries": {
+      "crayfish": {
+        "enabled": true,
+        "config": {}
+      }
+    }
+  }
+}
+```
+
+Notes:
+- If you already have `plugins.allow`, add `crayfish` to the list.
+- If you use `plugins.deny`, make sure it does not include `crayfish`.
+- Config changes require a **Gateway restart**.
+
 ## Usage
 
 Crayfish exposes one tool:
