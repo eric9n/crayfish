@@ -16,22 +16,22 @@ Key design properties:
 
 ## Install (from GitHub)
 
-### Option A: clone + link (recommended for dev)
+### Option A: one-time install (copies into ~/.openclaw/extensions)
 
 ```bash
-git clone <YOUR_GITHUB_REPO_URL>
+git clone https://github.com/eric9n/crayfish.git
 cd crayfish
-openclaw plugins install -l .
+openclaw plugins install .
 openclaw plugins enable crayfish
 openclaw gateway restart
 ```
 
-### Option B: clone + copy install
+### Option B: dev install (link mode; pulls updates via `git pull`)
 
 ```bash
-git clone <YOUR_GITHUB_REPO_URL>
+git clone https://github.com/eric9n/crayfish.git
 cd crayfish
-openclaw plugins install .
+openclaw plugins install -l .
 openclaw plugins enable crayfish
 openclaw gateway restart
 ```
