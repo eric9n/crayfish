@@ -1,0 +1,57 @@
+{
+  "name": "agent-resume-two-pass",
+  "version": 1,
+  "notes": [
+    "This example demonstrates a two-pass Crayfish run with an agent step:",
+    "1) First run returns status=needs_agent with requests[].requestId.",
+    "2) Orchestrator executes the agent request externally, then resumes by passing agentOutputs[requestId] and prior results.",
+    "",
+    "The agent output must be valid JSON and must satisfy the step.schema.",
+    "Crayfish does not call an LLM; it only returns needs_agent requests and validates outputs on resume."
+  ],
+  "pass1": {
+    "action": "run",
+    "agentId": "primary",
+    "workflow": {
+      "name": "resume-smoke-test",
+      "version": 1,
+      "steps": [
+        {
+          "id": "a1",
+          "kind": "agent",
+          "assigneeAgentId": "primary",
+          "session": { "mode": "ephemeral", "label": "wf:resume-smoke-test:primary" },
+          "prompt": "Return JSON only: {\"ok\": true, \"value\": 42}.",
+          "input": { "note": "test" },
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ok", "value"],
+            "properties": {
+              "ok": { "type": "boolean" },
+              "value": { "type": "number" }
+            }
+          },
+          "retries": 2
+        },
+        {
+          "id": "e1",
+          "kind": "exec",
+          "run": { "kind": "cmd", "cmd": "bash", "args": ["-lc", "echo after-agent"] },
+          "io": { "mode": "none" }
+        }
+      ]
+    }
+  },
+  "pass2": {
+    "action": "run",
+    "agentId": "primary",
+    "runId": "<copy from pass1 response.runId>",
+    "workflow": "<same workflow as pass1>",
+    "results": "<copy from pass1 response.results>",
+    "attempts": "<copy from pass1 response.attempts>",
+    "agentOutputs": {
+      "<copy from pass1 response.requests[0].requestId>": { "ok": true, "value": 42 }
+    }
+  }
+}

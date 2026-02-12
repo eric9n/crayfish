@@ -112,8 +112,11 @@ type Workflow = {
 
 type RunCtx = {
   vars: Record<string, Json>;
+  // stepId -> result payload
   results: Record<string, any>;
+  // requestId -> agent output payload (validated against step.schema)
   agentOutputs: Record<string, any>;
+  // stepId -> current attempt counter (1-indexed)
   attempts: Record<string, number>;
 };
 
@@ -354,6 +357,12 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
   for (const step of steps) {
     if (!step.id) throw new Error("Step missing id");
 
+    // Resume support: if we already have a successful result for this stepId, skip re-running it.
+    // (Caller/orchestrator may supply prior ctx.results for breakpoint resume.)
+    if (ctx.results?.[step.id]?.ok === true) {
+      continue;
+    }
+
     if (step.kind === "exec") {
       const retries = clamp1to5(step.retries, 1);
       let lastErr: any = null;
@@ -480,7 +489,10 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
     if (step.kind === "agent") {
       const maxAttempts = clamp1to5(step.retries, 2);
       const attempt = Math.max(1, Math.floor(Number(ctx.attempts[step.id] ?? 1)));
-      const out = ctx.agentOutputs?.[step.id];
+      const runId = String(params?.runId || "");
+      if (!runId) throw new Error("Missing runId (required for requestId-based resume)");
+      const requestId = `${runId}:${step.id}:${attempt}`;
+      const out = ctx.agentOutputs?.[requestId];
 
       if (out === undefined) {
         return {
@@ -488,6 +500,7 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
           status: "needs_agent",
           requests: [
             {
+              requestId,
               stepId: step.id,
               assigneeAgentId: step.assigneeAgentId,
               session: step.session,
@@ -510,11 +523,13 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx, locals: Record<
         if (nextAttempt > maxAttempts) {
           return { ok: false, error: "agent_output_schema_failed", stepId: step.id, errors: errs.slice(0, 30) };
         }
+        const requestId = `${runId}:${step.id}:${nextAttempt}`;
         return {
           ok: true,
           status: "needs_agent",
           requests: [
             {
+              requestId,
               stepId: step.id,
               assigneeAgentId: step.assigneeAgentId,
               session: step.session,
@@ -549,6 +564,9 @@ const PARAMETERS_SCHEMA: any = {
   properties: {
     action: { type: "string", enum: ["run"] },
 
+    // Optional: provide a stable run id so requestIds remain stable across resume attempts.
+    runId: { type: "string" },
+
     // REQUIRED: pick a configured agent as the workspace+agentDir context.
     // This does NOT spawn an agent turn; it only selects a deterministic root for path resolution + exec cwd.
     agentId: { type: "string" },
@@ -565,6 +583,8 @@ const PARAMETERS_SCHEMA: any = {
       }
     },
     vars: { type: "object" },
+    // Resume inputs
+    results: { type: "object" },
     agentOutputs: { type: "object" },
     attempts: { type: "object" },
     ref: {
@@ -627,16 +647,31 @@ export default function (api: any) {
         (params as any).__workspaceRoot = root;
 
         const wf: Workflow = params.workflow;
+
+        // Stable run id for requestId-based resume.
+        const runId = String(params.runId || crypto.randomBytes(6).toString("hex"));
+        (params as any).runId = runId;
+
+        // Back-compat: if the caller cannot pass resume fields as top-level tool params
+        // (e.g., due to a restricted function-call schema), allow embedding them in workflow.vars.
+        const embeddedAgentOutputs = (wf.vars as any)?.__agentOutputs;
+        const embeddedAttempts = (wf.vars as any)?.__attempts;
+        const embeddedResults = (wf.vars as any)?.__results;
+
+        const mergedVars: Record<string, Json> = { ...(wf.vars ?? {}), ...(params.vars ?? {}) };
+        delete (mergedVars as any).__agentOutputs;
+        delete (mergedVars as any).__attempts;
+        delete (mergedVars as any).__results;
+
         const ctx: RunCtx = {
-          vars: { ...(wf.vars ?? {}), ...(params.vars ?? {}) },
-          results: {},
-          agentOutputs: params.agentOutputs ?? {},
-          attempts: params.attempts ?? {}
+          vars: mergedVars,
+          results: params.results ?? embeddedResults ?? {},
+          agentOutputs: params.agentOutputs ?? embeddedAgentOutputs ?? {},
+          attempts: params.attempts ?? embeddedAttempts ?? {}
         };
 
-        const runId = crypto.randomBytes(6).toString("hex");
         const out = await runSteps(params, wf.steps as any, ctx, {});
-        return { content: [{ type: "text", text: JSON.stringify({ runId, ...out }) }] };
+        return { content: [{ type: "text", text: JSON.stringify({ runId: (params as any).runId, ...out }) }] };
       }
     },
     { optional: true }

@@ -26,17 +26,20 @@ Workflow declares:
 - `retries`: max attempts (1–5)
 
 Runtime behavior:
-1) If caller does **not** provide `agentOutputs[stepId]`:
+1) If caller does **not** provide `agentOutputs[requestId]`:
    - Crayfish returns `status: "needs_agent"` with a `requests[]` array.
+   - Each request includes a stable `requestId` with the format `"<runId>:<stepId>:<attempt>"`.
    - Each request MAY include `assigneeAgentId` and `session` (if declared on the `agent` step) as optional metadata for the caller.
-2) Caller (the agent) generates JSON and calls `crayfish.run` again with:
-   - `agentOutputs: { [stepId]: <json> }`
+2) Caller/orchestrator generates JSON and calls `crayfish.run` again with:
+   - the same `runId`
+   - `agentOutputs: { [requestId]: <json> }`
    - `attempts: { [stepId]: <attemptNumber> }` (start at 1)
+   - `results: { [stepId]: <priorResult> }` (recommended for breakpoint-style resume)
 3) Crayfish validates output against `schema`:
    - If valid: stores into `results[stepId]` and continues.
    - If invalid: returns `needs_agent` again, including:
      - `retryContext.validationErrors[]`
-     - incremented `attempt`
+     - incremented `attempt` (and a new `requestId`)
    - If attempts exceed `retries`: returns `{ ok:false, error:"agent_output_schema_failed" }`.
 
 This achieves **schema-validated convergence loops** without the tool ever calling an LLM.
