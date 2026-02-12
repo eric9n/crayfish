@@ -1,0 +1,18 @@
+# Node / tooling
+node_modules/
+*.log
+.DS_Store
+
+# Build outputs (if you add a build later)
+dist/
+coverage/
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+
+# OpenClaw runtime artifacts (if any get added later)
+.tmp/

@@ -1,0 +1,58 @@
+{
+  "name": "xbot-daily-skeleton",
+  "version": 1,
+  "vars": {
+    "TMP": "/tmp/xbot-daily"
+  },
+  "steps": [
+    {
+      "id": "mk_tmp",
+      "kind": "exec",
+      "shell": "mkdir -p '{{vars.TMP}}'"
+    },
+    {
+      "id": "load_candidates",
+      "kind": "exec",
+      "shell": "# TODO: load today's ledger/state and produce candidates list\n# Must write JSON like: {\"items\":[ ... ]}\necho '{\\\"items\\\":[]}' > '{{vars.TMP}}/candidates.json'\ncat '{{vars.TMP}}/candidates.json'"
+    },
+    {
+      "id": "select_top",
+      "kind": "agent",
+      "prompt": "Select Top5 for deep verify/analyze; items 6-10 for light labeling. Output STRICT JSON only.",
+      "input": {
+        "candidatesPath": "{{vars.TMP}}/candidates.json"
+      },
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["top5", "rest"],
+        "properties": {
+          "top5": { "type": "array", "maxItems": 5, "items": {} },
+          "rest": { "type": "array", "maxItems": 5, "items": {} }
+        }
+      },
+      "retries": 3
+    },
+    {
+      "id": "deep_verify_top5",
+      "kind": "forEach",
+      "listPath": "$.results.select_top.json.top5",
+      "itemVar": "item",
+      "body": [
+        {
+          "id": "verify_one",
+          "kind": "agent",
+          "prompt": "Deep verify this item. Output STRICT JSON only.",
+          "input": { "item": "{{locals.item}}" },
+          "schema": { "type": "object", "additionalProperties": true },
+          "retries": 3
+        }
+      ]
+    },
+    {
+      "id": "render_daily",
+      "kind": "exec",
+      "shell": "# TODO: render final daily text\necho '{\\\"text\\\":\\\"\\\"}'"
+    }
+  ]
+}

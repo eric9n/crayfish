@@ -1,0 +1,27 @@
+{
+  "name": "exec-cmd-stream",
+  "version": 1,
+  "steps": [
+    {
+      "id": "in",
+      "kind": "exec",
+      "run": { "kind": "cmd", "cmd": "node", "args": ["-e", "process.stdout.write(JSON.stringify({a:1}))"] },
+      "io": { "mode": "stream" }
+    },
+    {
+      "id": "inc",
+      "kind": "exec",
+      "run": {
+        "kind": "cmd",
+        "cmd": "node",
+        "args": ["-e", "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const o=JSON.parse(s);o.a+=1;process.stdout.write(JSON.stringify(o));});"]
+      },
+      "io": {
+        "mode": "stream",
+        "inputFrom": { "stepId": "in", "jsonPath": "$" },
+        "inputSchema": { "type": "object", "required": ["a"], "properties": { "a": { "type": "number" } } },
+        "outputSchema": { "type": "object", "required": ["a"], "properties": { "a": { "type": "number" } } }
+      }
+    }
+  ]
+}

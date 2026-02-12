@@ -1,0 +1,12 @@
+{
+  "name": "exec-cmd-none",
+  "version": 1,
+  "steps": [
+    {
+      "id": "hello",
+      "kind": "exec",
+      "run": { "kind": "cmd", "cmd": "echo", "args": ["hello"] },
+      "io": { "mode": "none" }
+    }
+  ]
+}

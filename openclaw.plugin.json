@@ -1,0 +1,12 @@
+{
+  "id": "crayfish",
+  "name": "Crayfish",
+  "version": "0.1.1",
+  "description": "Crayfish: JSON workflow runner with exec/if/forEach/while + schema-validated agent-step convergence (Crayfish never calls LLMs).",
+  "skills": ["skills/crayfish-workflows"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

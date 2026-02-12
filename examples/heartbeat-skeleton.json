@@ -1,0 +1,69 @@
+{
+  "name": "xbot-heartbeat-skeleton",
+  "version": 1,
+  "vars": {
+    "TMP": "/tmp/xbot-heartbeat"
+  },
+  "steps": [
+    {
+      "id": "mk_tmp",
+      "kind": "exec",
+      "shell": "mkdir -p '{{vars.TMP}}'"
+    },
+    {
+      "id": "fetch",
+      "kind": "exec",
+      "shell": "# TODO: run bird search/read; write raw tweets JSON\n# Example: /usr/bin/bird search --json 'Tesla OR SpaceX lang:en' > '{{vars.TMP}}/tweets_raw.json'\necho '{}' > '{{vars.TMP}}/tweets_raw.json'\necho '{{vars.TMP}}/tweets_raw.json'"
+    },
+    {
+      "id": "normalize",
+      "kind": "exec",
+      "shell": "# TODO: node pipeline/stages/01_normalize.js ...\necho '{\"tweets\":[]}' > '{{vars.TMP}}/tweets_norm.json'\necho '{{vars.TMP}}/tweets_norm.json'"
+    },
+    {
+      "id": "cluster",
+      "kind": "exec",
+      "shell": "# TODO: node pipeline/stages/03_cluster.js ...\necho '{\"clusters\":[]}' > '{{vars.TMP}}/clusters.json'\necho '{{vars.TMP}}/clusters.json'"
+    },
+    {
+      "id": "gate",
+      "kind": "exec",
+      "shell": "# TODO: node pipeline/stages/07_gate.js ...\necho '{\"approved\":false,\"reasons\":[]}' > '{{vars.TMP}}/gate.json'\necho '{{vars.TMP}}/gate.json'"
+    },
+    {
+      "id": "verify",
+      "kind": "agent",
+      "assigneeAgentId": "musk",
+      "session": { "mode": "sticky", "label": "wf:xbot-heartbeat:musk" },
+      "prompt": "Deep verification for Top items. Output STRICT JSON only (no markdown).",
+      "input": {
+        "clustersPath": "{{vars.TMP}}/clusters.json",
+        "gatePath": "{{vars.TMP}}/gate.json"
+      },
+      "schema": {
+        "$ref": "Verify"
+      },
+      "retries": 3
+    },
+    {
+      "id": "analyze",
+      "kind": "agent",
+      "assigneeAgentId": "musk",
+      "session": { "mode": "sticky", "label": "wf:xbot-heartbeat:musk" },
+      "prompt": "Analysis: facts → mechanism → probabilities → impacts → risks → watchpoints. Output STRICT JSON only (no markdown).",
+      "input": {
+        "clustersPath": "{{vars.TMP}}/clusters.json",
+        "verifyStepId": "verify"
+      },
+      "schema": {
+        "$ref": "Analysis"
+      },
+      "retries": 3
+    },
+    {
+      "id": "render",
+      "kind": "exec",
+      "shell": "# TODO: node pipeline/stages/09_render_analysis.js ...\necho '{\"text\":\"\"}' > '{{vars.TMP}}/render.json'\ncat '{{vars.TMP}}/render.json'"
+    }
+  ]
+}
