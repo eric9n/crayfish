@@ -94,6 +94,7 @@ type Workflow = {
   name?: string;
   version?: number;
   vars?: Record<string, Json>;
+  env?: Record<string, string>;
   steps: Step[];
 };
 
@@ -423,9 +424,15 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
           const argsI = (step.run.args ?? []).map((a) => interpolate(a, ctx));
 
           let envI: Record<string, string> | undefined;
-          if (step.env) {
+
+          // Merge global workflow env with step env
+          const globalEnv = (params.workflow as Workflow).env || {};
+          const stepEnv = step.env || {};
+          const combinedEnv = { ...globalEnv, ...stepEnv };
+
+          if (Object.keys(combinedEnv).length > 0) {
             envI = {};
-            for (const [k, v] of Object.entries(step.env)) {
+            for (const [k, v] of Object.entries(combinedEnv)) {
               envI[k] = interpolate(v, ctx);
             }
           }

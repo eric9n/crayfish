@@ -62,6 +62,7 @@ This achieves **schema-validated convergence loops** without the tool ever calli
 - `name` (string, optional)
 - `version` (number, optional)
 - `vars` (object, optional): static variables available to template interpolation
+- `env` (object, optional): global environment variables applied to all exec steps
 - `steps` (array, required): list of steps
 
 ## 3) Context model: vars/results
