@@ -78,6 +78,7 @@ type Step =
       reset?: boolean;
     };
     prompt: string;
+    attachments?: string[];
     input: Json;
     schema: Json;
     retries?: number; // 1..5 (hard cap)
@@ -327,7 +328,16 @@ function interpolateDeep(val: Json, ctx: RunCtx): Json {
 function resolveWorkspacePath(params: any, pRel: string) {
   const root = getWorkspaceRoot(params);
   const raw = String(pRel || "");
-  if (!raw || raw.startsWith("/")) throw new Error(`Path must be workspace-relative: ${raw}`);
+  if (!raw) throw new Error("Path cannot be empty");
+
+  // Allow absolute paths if they are in /tmp
+  if (raw.startsWith("/")) {
+    if (raw.startsWith("/tmp/")) {
+      return path.resolve(raw);
+    }
+    throw new Error(`Absolute path must start with /tmp/: ${raw}`);
+  }
+
   const resolved = path.resolve(root, raw);
   if (!(resolved === root || resolved.startsWith(root + path.sep))) {
     throw new Error(`Path escapes workspace root: ${raw}`);
@@ -530,6 +540,10 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
       const resolvedInput = interpolateDeep(step.input, ctx);
       // Deep-resolve $ref so the returned schema is self-contained for the caller/LLM
       const resolvedSchema = resolveSchemaRefs(params, step.schema);
+      const resolvedAttachments = (step.attachments || []).map((p) => {
+        const pRel = interpolate(p, ctx);
+        return resolveWorkspacePath(params, pRel);
+      });
 
       if (out === undefined) {
         return {
@@ -544,6 +558,7 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
               attempt,
               maxAttempts,
               prompt: resolvedPrompt,
+              files: resolvedAttachments,
               input: resolvedInput,
               schema: resolvedSchema
             }
@@ -573,6 +588,7 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
               attempt: nextAttempt,
               maxAttempts,
               prompt: resolvedPrompt,
+              files: resolvedAttachments,
               input: resolvedInput,
               schema: resolvedSchema,
               retryContext: { validationErrors: errs.slice(0, 30) }

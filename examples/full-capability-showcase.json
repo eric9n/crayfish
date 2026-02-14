@@ -74,8 +74,11 @@
         "reset": true
       },
       "prompt": "Analyze the market data and provide a sentiment score (0-1).",
+      "attachments": [
+        "{{vars.TMP_DIR}}/market_data.json"
+      ],
       "input": {
-        "market_data": "{{vars.TMP_DIR}}/market_data.json"
+        "market_data_path": "{{vars.TMP_DIR}}/market_data.json"
       },
       "schema": {
         "type": "object",

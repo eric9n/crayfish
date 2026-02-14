@@ -47,8 +47,9 @@ Crayfish never calls an LLM.
 If it returns:
 
 - `status: "needs_agent"`
-- `requests[0] = { requestId, stepId, prompt, input, schema, attempt, maxAttempts, retryContext?, assigneeAgentId?, session? }`
+- `requests[0] = { requestId, stepId, prompt, files, input, schema, attempt, maxAttempts, retryContext?, assigneeAgentId?, session? }`
   - `requestId` format: `<runId>:<stepId>:<attempt>` (used as key in `agentOutputs`).
+  - `files`: Array of absolute file paths (resolved from `attachments` in step definition).
   - `schema` is **fully resolved** (all `$ref` expanded). The caller receives a self-contained JSON Schema.
   - `assigneeAgentId` / `session` are optional metadata for the caller (Crayfish only echoes them).
 
@@ -62,6 +63,7 @@ Then the caller must:
 {
   "task": { "stepId": "...", "attempt": 1, "maxAttempts": 3 },
   "instructions": "<request.prompt>",
+  "files": [ "/path/to/file1.pdf" ],
   "input": "<request.input>",
   "outputSchema": "<request.schema (fully resolved)>",
   "retryContext": "<request.retryContext if present>"
