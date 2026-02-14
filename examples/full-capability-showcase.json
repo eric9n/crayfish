@@ -1,0 +1,167 @@
+{
+  "name": "full-capability-showcase",
+  "version": 1,
+  "description": "Showcases all Crayfish features: exec env/io/stream, agent sessions, conditional branching, variable interpolation, and JSON schema validation.",
+  "vars": {
+    "TMP_DIR": "/tmp/crayfish-showcase",
+    "RETRY_COUNT": 3,
+    "AGENT_MODEL": "primary"
+  },
+  "steps": [
+    {
+      "id": "setup_env",
+      "kind": "exec",
+      "description": "Demonstrates env var injection and variable interpolation",
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "mkdir -p '$WORK_DIR' && echo \"Setup complete in $WORK_DIR\""
+        ]
+      },
+      "env": {
+        "WORK_DIR": "{{vars.TMP_DIR}}",
+        "DEBUG_MODE": "true"
+      },
+      "timeoutMs": 5000,
+      "retries": 2
+    },
+    {
+      "id": "generate_data",
+      "kind": "exec",
+      "description": "Demonstrates file-based I/O validation",
+      "run": {
+        "kind": "cmd",
+        "cmd": "bash",
+        "args": [
+          "-lc",
+          "echo '{\"market\":\"TSLA\",\"price\":250.5,\"volume\":1000000}' > '{{vars.TMP_DIR}}/market_data.json'"
+        ]
+      },
+      "io": {
+        "mode": "file",
+        "out": {
+          "market_snapshot": {
+            "path": "{{vars.TMP_DIR}}/market_data.json",
+            "schema": {
+              "type": "object",
+              "required": [
+                "market",
+                "price"
+              ],
+              "properties": {
+                "market": {
+                  "type": "string"
+                },
+                "price": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "analyze_sentiment",
+      "kind": "agent",
+      "description": "Demonstrates agent step with strict schema and sticky session",
+      "assigneeAgentId": "{{vars.AGENT_MODEL}}",
+      "session": {
+        "mode": "sticky",
+        "label": "wf:showcase:analyst",
+        "reset": true
+      },
+      "prompt": "Analyze the market data and provide a sentiment score (0-1).",
+      "input": {
+        "market_data": "{{vars.TMP_DIR}}/market_data.json"
+      },
+      "schema": {
+        "type": "object",
+        "required": [
+          "sentiment_score",
+          "reasoning"
+        ],
+        "properties": {
+          "sentiment_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "reasoning": {
+            "type": "string"
+          }
+        }
+      },
+      "retries": "{{vars.RETRY_COUNT}}"
+    },
+    {
+      "id": "check_risk",
+      "kind": "if",
+      "description": "Demonstrates conditional branching based on previous results",
+      "cond": {
+        "op": "lt",
+        "path": "$.results.analyze_sentiment.json.sentiment_score",
+        "value": 0.5
+      },
+      "then": [
+        {
+          "id": "alert_risk",
+          "kind": "exec",
+          "run": {
+            "kind": "cmd",
+            "cmd": "echo",
+            "args": [
+              "RISK ALERT: Sentiment is low!"
+            ]
+          }
+        }
+      ],
+      "else": [
+        {
+          "id": "log_safe",
+          "kind": "exec",
+          "run": {
+            "kind": "cmd",
+            "cmd": "echo",
+            "args": [
+              "Market sentiment is healthy."
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "stream_processor",
+      "kind": "exec",
+      "description": "Demonstrates stream I/O mode (stdin/stdout JSON)",
+      "run": {
+        "kind": "cmd",
+        "cmd": "node",
+        "args": [
+          "-e",
+          "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const i=JSON.parse(s); console.log(JSON.stringify({processed: true, original: i}));});"
+        ]
+      },
+      "io": {
+        "mode": "stream",
+        "inputFrom": {
+          "stepId": "analyze_sentiment",
+          "jsonPath": "$"
+        },
+        "outputSchema": {
+          "type": "object",
+          "required": [
+            "processed"
+          ],
+          "properties": {
+            "processed": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

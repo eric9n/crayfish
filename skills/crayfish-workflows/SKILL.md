@@ -11,6 +11,7 @@ description: Create, edit, and validate Crayfish JSON workflows for OpenClaw pip
 - Examples:
   - `/root/.openclaw/extensions/crayfish/examples/heartbeat-skeleton.json`
   - `/root/.openclaw/extensions/crayfish/examples/daily-skeleton.json`
+  - `/root/.openclaw/extensions/crayfish/examples/full-capability-showcase.json`
 
 ## Output rules (mandatory)
 

@@ -114,6 +114,8 @@ Schema:
 
 - `run.kind` must be `cmd`.
 - `run.cmd` is the executable; `run.args` are argv.
+- `env` (optional): dictionary of environment variables to set (merged with process.env).
+  - keys and values support `{{vars.X}}` interpolation.
 
 #### I/O modes
 
@@ -168,6 +170,17 @@ Optional step metadata:
   - `mode`: "ephemeral" | "sticky" (default: caller decides)
   - `label`: recommended sticky label (convention: `wf:<workflowId>:<assigneeAgentId>`)
   - `reset`: boolean; if true, the caller should reset/recreate the sticky session before running
+
+## Prompting Best Practices
+
+**Don't "paint the lily"**: The agent already has a persona.
+
+- **BAD**: "You are a professional analyst... process this data..."
+- **GOOD**: "Process the following data and extract key metrics..."
+
+Focus the `prompt` on the **task** and **output requirements**. Let the agent's soul handle the personality.
+
+## Validation checklist before wiring croning
 
 Schema:
 ```json
@@ -307,7 +320,23 @@ When an LLM writes a workflow JSON:
   - retries <= 5
   - a short `prompt` describing *what to do* (do NOT paste the schema into the prompt).
 
-### 8.2 Structured-input method A (recommended for agent steps)
+### 8.2 Prompting Best Practices (Don't "Paint the Lily")
+
+The `agent` executing the step **already has a persona/soul**. Do not waste tokens or confuse the model by redefining who it is in the `prompt`.
+
+**BAD:**
+```json
+"prompt": "You are a rigorous options trader assistant. You are helpful, professional, and concise. Your job is to analyze risk..."
+```
+*(Why bad: The agent is already configured as a trader. This adds noise and may conflict with the system prompt.)*
+
+**GOOD:**
+```json
+"prompt": "Analyze the following option spread risk based on the Greeks provided in `input`. Return a risk assessment JSON."
+```
+*(Why good: Focuses purely on the task and the immediate context.)*
+
+### 8.3 Structured-input method A (recommended for agent steps)
 
 Do **not** embed the schema into the `prompt` string. Instead, the agent should pass a structured payload to the model that includes:
 - `instructions` (the step prompt)

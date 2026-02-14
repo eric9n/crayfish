@@ -49,6 +49,7 @@ type Step =
     run: { kind: "cmd"; cmd: string; args?: string[] };
     timeoutMs?: number;
     retries?: number;
+    env?: Record<string, string>;
     io?:
     | { mode?: "none" }
     | {
@@ -349,12 +350,23 @@ function validateFileContract(params: any, contract: FileContract, ctx: RunCtx, 
   return { pathRel: pRel, pathAbs: pAbs, value };
 }
 
-async function execCmd(params: any, cmd: string, args: string[] = [], timeoutMs = DEFAULT_EXEC_TIMEOUT_MS, stdinText?: string) {
+async function execCmd(
+  params: any,
+  cmd: string,
+  args: string[] = [],
+  timeoutMs = DEFAULT_EXEC_TIMEOUT_MS,
+  stdinText?: string,
+  env?: Record<string, string>
+) {
   const { spawn } = await import("node:child_process");
   const cwd = getWorkspaceRoot(params);
 
   return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"], cwd });
+    const child = spawn(cmd, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd,
+      env: env ? { ...process.env, ...env } : undefined
+    });
     let stdout = "";
     let stderr = "";
     const t = setTimeout(() => {
@@ -410,13 +422,21 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
           const cmdI = interpolate(step.run.cmd, ctx);
           const argsI = (step.run.args ?? []).map((a) => interpolate(a, ctx));
 
+          let envI: Record<string, string> | undefined;
+          if (step.env) {
+            envI = {};
+            for (const [k, v] of Object.entries(step.env)) {
+              envI[k] = interpolate(v, ctx);
+            }
+          }
+
           if (mode === "file") {
             const ioIn = (step.io as any).in || {};
             for (const [k, c] of Object.entries(ioIn)) {
               validateFileContract(params, c as any, ctx, `step:${step.id}:in:${k}`);
             }
 
-            const out = await execCmd(params, cmdI, argsI, timeoutMs);
+            const out = await execCmd(params, cmdI, argsI, timeoutMs, undefined, envI);
 
             const outputs: any = {};
             const ioOut = (step.io as any).out || {};
@@ -449,7 +469,7 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
 
             const stdinText = JSON.stringify(inJson ?? null);
 
-            const out = await execCmd(params, cmdI, argsI, timeoutMs, stdinText);
+            const out = await execCmd(params, cmdI, argsI, timeoutMs, stdinText, envI);
 
             let outJson: any;
             try {
@@ -469,7 +489,7 @@ async function runSteps(params: any, steps: Step[], ctx: RunCtx): Promise<any> {
             break;
           }
 
-          const out = await execCmd(params, cmdI, argsI, timeoutMs);
+          const out = await execCmd(params, cmdI, argsI, timeoutMs, undefined, envI);
           ctx.results[step.id] = { kind: "exec", ok: true, mode: "none", stdout: out.stdout.trim(), stderr: out.stderr };
           lastErr = null;
           break;
